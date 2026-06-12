@@ -5,7 +5,7 @@
   "homepage": "https://NonTecyUser.github.io/my_portfolio_website",
   "scripts": {
     "dev": "next dev",
-    "build": "next build && next export -o out",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "predeploy": "npm run build",
