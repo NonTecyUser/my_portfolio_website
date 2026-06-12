@@ -1,0 +1,18 @@
+/* styles/tokens.css — toggled by next-themes adding/removing `.dark` on <html> */
+:root {
+  --bg-base: #F7F8FA;
+  --bg-surface: rgba(255, 255, 255, 0.6);
+  --text-primary: #11151B;
+  --text-muted: #5B6573;
+  --accent: #0D9488;
+  --accent-warm: #D97706;
+}
+
+.dark {
+  --bg-base: #0A0C10;
+  --bg-surface: rgba(255, 255, 255, 0.04);
+  --text-primary: #ECEFF3;
+  --text-muted: #8B96A5;
+  --accent: #5EEAD4;
+  --accent-warm: #F5A623;
+}
