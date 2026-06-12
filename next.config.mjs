@@ -5,7 +5,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  basePath: '/samir-portfolio'
   trailingSlash: true,
+  
   // Ensure asset paths work correctly with basePath
   assetPrefix: '/my_portfolio_website/',
 };
