@@ -7,7 +7,7 @@ import {
   useSpring,
   useTransform,
 } from 'framer-motion';
-import { Github, ExternalLink } from 'lucide-react';
+import { Code2, ExternalLink } from 'lucide-react';
 
 /**
  * Project shape expected (see data/projects.ts):
@@ -91,7 +91,7 @@ export default function ProjectCard({ project }) {
                 aria-label={`${title} source on GitHub`}
                 className="transition-colors hover:text-text-primary"
               >
-                <Github size={18} />
+                <Code2 size={18} />
               </a>
             )}
             {links?.demo && (

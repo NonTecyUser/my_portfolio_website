@@ -1,7 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
-  reactCompiler: true,
+  output: 'export',
+  // Disable default image optimization since GitHub Pages is purely static
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;
