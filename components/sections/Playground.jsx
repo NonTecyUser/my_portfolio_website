@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw, Brain } from 'lucide-react';
+import { RefreshCw, Brain, Pause } from 'lucide-react';
 import QuizSettings from '@/components/ui/QuizSettings';
 import QuizTimer from '@/components/ui/QuizTimer';
+import Leaderboard from '@/components/ui/Leaderboard';
 
 const OPERATORS = ['+', '-', '×'];
+const IDLE_LIMIT_MS = 60000; // 1 minute
 
 function generateQuestion() {
   const op = OPERATORS[Math.floor(Math.random() * OPERATORS.length)];
@@ -40,72 +42,142 @@ function generateQuestion() {
   };
 }
 
-// 50% accuracy + 50% speed, per question (max 1.0):
-//  - correct answer -> +0.5
-//  - answered within 8s  -> +0.5 (100% of speed half)
-//  - answered within 15s -> +0.35 (70% of speed half)
-//  - slower              -> +0.25 (50% of speed half)
-function scoreQuestion(isCorrect, elapsedSeconds) {
-  const accuracyPoints = isCorrect ? 0.5 : 0;
-  let speedPoints;
-  if (elapsedSeconds <= 8) speedPoints = 0.5;
-  else if (elapsedSeconds <= 15) speedPoints = 0.35;
-  else speedPoints = 0.25;
-
-  return accuracyPoints + speedPoints;
+// Speed bonus applied to EVERY correct answer, based on total quiz time.
+// Thresholds scale with question count (8s / 12s are calibrated for 10 questions).
+function getTimeBonus(totalSeconds, questionCount) {
+  const fast = questionCount * 0.8; // e.g. 8s for 10 questions
+  const ok = questionCount * 1.2; // e.g. 12s for 10 questions
+  if (totalSeconds <= fast) return 0.5;
+  if (totalSeconds <= ok) return 0.35;
+  return 0.25;
 }
 
 export default function Playground() {
-  const [phase, setPhase] = useState('settings'); // 'settings' | 'playing' | 'finished'
+  const [phase, setPhase] = useState('settings'); // settings | playing | paused | finished
   const [questionCount, setQuestionCount] = useState(10);
 
   const [question, setQuestion] = useState(null);
   const [round, setRound] = useState(1);
-  const [totalScore, setTotalScore] = useState(0); // sum of per-question points (0..questionCount)
   const [correctCount, setCorrectCount] = useState(0);
   const [selected, setSelected] = useState(null);
-  const [startTime, setStartTime] = useState(null);
+
+  const [pausedMs, setPausedMs] = useState(0);
+  const [result, setResult] = useState(null); // { percentage, totalSeconds, timeBonus }
+  const [previousBest, setPreviousBest] = useState(null); // record that existed BEFORE this run
+  const [isNewRecord, setIsNewRecord] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [nameSaved, setNameSaved] = useState(false);
+
+  const quizStartRef = useRef(null);
+  const lastActivityRef = useRef(null);
+  const pauseStartRef = useRef(null);
+
+  // Idle watcher — pauses the quiz after IDLE_LIMIT_MS of no interaction.
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > IDLE_LIMIT_MS) {
+        pauseStartRef.current = Date.now();
+        setPhase('paused');
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [phase]);
+
+  function loadBest(count) {
+    const key = `mathquiz-best-${count}`;
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
 
   function startQuiz() {
     setQuestion(generateQuestion());
     setRound(1);
-    setTotalScore(0);
     setCorrectCount(0);
     setSelected(null);
-    setStartTime(Date.now());
+    setPausedMs(0);
+    setResult(null);
+    setIsNewRecord(false);
+    setNameSaved(false);
+    setNameInput('');
+    setPreviousBest(loadBest(questionCount));
+    quizStartRef.current = Date.now();
+    lastActivityRef.current = Date.now();
     setPhase('playing');
   }
+
+  function resumeQuiz() {
+    setPausedMs((p) => p + (Date.now() - pauseStartRef.current));
+    lastActivityRef.current = Date.now();
+    setPhase('playing');
+  }
+
+  const finishQuiz = useCallback(
+    (finalCorrectCount) => {
+      const totalSeconds = (Date.now() - quizStartRef.current - pausedMs) / 1000;
+      const timeBonus = getTimeBonus(totalSeconds, questionCount);
+      const finalScore = finalCorrectCount * (0.5 + timeBonus);
+      const percentage = Math.round((finalScore / questionCount) * 100);
+
+      setResult({ percentage, totalSeconds, timeBonus });
+
+      const best = loadBest(questionCount);
+      setPreviousBest(best);
+      setIsNewRecord(!best || percentage > best.percentage);
+      setPhase('finished');
+    },
+    [pausedMs, questionCount]
+  );
 
   const handleAnswer = useCallback(
     (option) => {
       if (selected !== null) return;
+      lastActivityRef.current = Date.now();
       setSelected(option);
 
-      const elapsed = (Date.now() - startTime) / 1000;
       const isCorrect = option === question.answer;
-      if (isCorrect) setCorrectCount((c) => c + 1);
-      setTotalScore((s) => s + scoreQuestion(isCorrect, elapsed));
+      const nextCorrect = isCorrect ? correctCount + 1 : correctCount;
+      if (isCorrect) setCorrectCount(nextCorrect);
 
       setTimeout(() => {
         if (round >= questionCount) {
-          setPhase('finished');
+          finishQuiz(nextCorrect);
         } else {
           setRound((r) => r + 1);
           setQuestion(generateQuestion());
           setSelected(null);
-          setStartTime(Date.now());
         }
-      }, 600);
+      }, 500);
     },
-    [selected, question, round, questionCount, startTime]
+    [selected, question, round, questionCount, correctCount, finishQuiz]
   );
+
+  function saveRecord() {
+    if (!nameInput.trim() || !result) return;
+    const key = `mathquiz-best-${questionCount}`;
+    const newRecord = { name: nameInput.trim(), percentage: result.percentage };
+    try {
+      localStorage.setItem(key, JSON.stringify(newRecord));
+    } catch {
+      /* ignore storage errors */
+    }
+    setNameSaved(true);
+  }
 
   function restart() {
     setPhase('settings');
     setQuestion(null);
   }
 
-  const percentage = phase === 'finished' ? Math.round((totalScore / questionCount) * 100) : 0;
+  // Record shown in the leaderboard panel: the freshly-saved one if the
+  // player just set a new record, otherwise whatever was on record before.
+  const displayedRecord = nameSaved
+    ? { name: nameInput.trim(), percentage: result.percentage }
+    : previousBest;
 
   return (
     <section id="playground" className="bg-base px-6 py-24 md:px-12 lg:px-20">
@@ -117,10 +189,25 @@ export default function Playground() {
           Quick mental math quiz
         </h2>
         <p className="mt-3 text-text-muted">
-          Half your score comes from accuracy, half from speed — answer fast and right.
+          Half your score is accuracy, half is how fast you finish the whole quiz.
         </p>
 
         <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-xl">
+          {/* Persistent timer header — stays mounted across question changes
+              so it never visibly resets, only the question card animates. */}
+          {(phase === 'playing' || phase === 'paused') && (
+            <div className="mb-4 flex items-center justify-between">
+              <span className="font-mono text-xs text-text-muted">
+                Question {Math.min(round, questionCount)} / {questionCount}
+              </span>
+              <QuizTimer
+                startTime={quizStartRef.current}
+                pausedMs={pausedMs}
+                frozen={phase === 'paused'}
+              />
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {phase === 'settings' && (
               <motion.div
@@ -146,12 +233,7 @@ export default function Playground() {
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.25 }}
               >
-                <div className="flex items-center justify-between font-mono text-xs text-text-muted">
-                  <span>Question {round} / {questionCount}</span>
-                  <QuizTimer startTime={startTime} frozen={selected !== null} />
-                </div>
-
-                <p className="mt-6 text-center font-display text-4xl font-semibold text-text-primary sm:text-5xl">
+                <p className="text-center font-display text-4xl font-semibold text-text-primary sm:text-5xl">
                   {question.text}
                 </p>
 
@@ -186,35 +268,94 @@ export default function Playground() {
               </motion.div>
             )}
 
-            {phase === 'finished' && (
+            {phase === 'paused' && (
+              <motion.div
+                key="paused"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center py-10 text-center"
+              >
+                <Pause className="text-accent" size={28} />
+                <p className="mt-4 font-display text-xl font-semibold text-text-primary">
+                  Paused — no activity for 1 minute
+                </p>
+                <p className="mt-2 text-sm text-text-muted">
+                  This time won't count toward your score.
+                </p>
+                <button
+                  onClick={resumeQuiz}
+                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-accent px-6 py-2.5 font-medium text-base-deep transition-shadow hover:shadow-lg hover:shadow-accent/30"
+                >
+                  Resume
+                </button>
+              </motion.div>
+            )}
+
+            {phase === 'finished' && result && (
               <motion.div
                 key="result"
                 initial={{ opacity: 0, scale: 0.96 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3 }}
-                className="text-center"
+                className="grid gap-6 sm:grid-cols-[1fr_180px]"
               >
-                <Brain className="mx-auto text-accent" size={32} />
-                <p className="mt-4 font-display text-3xl font-semibold text-text-primary">
-                  {percentage}%
-                </p>
-                <p className="mt-2 text-text-muted">
-                  {correctCount} / {questionCount} correct — accuracy and speed combined
-                </p>
-                <p className="mt-1 text-sm text-text-muted">
-                  {percentage >= 90
-                    ? 'Outstanding — fast and accurate.'
-                    : percentage >= 70
-                    ? 'Solid run — nice work.'
-                    : 'Give it another go.'}
-                </p>
-                <button
-                  onClick={restart}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 font-medium text-base-deep transition-shadow hover:shadow-lg hover:shadow-accent/30"
-                >
-                  <RefreshCw size={16} />
-                  Try again
-                </button>
+                <div className="text-center sm:text-left">
+                  <Brain className="mx-auto text-accent sm:mx-0" size={28} />
+                  <p className="mt-4 font-display text-3xl font-semibold text-text-primary">
+                    {result.percentage}%
+                  </p>
+                  <p className="mt-2 text-text-muted">
+                    {correctCount} / {questionCount} correct · finished in{' '}
+                    {result.totalSeconds.toFixed(1)}s
+                  </p>
+                  <p className="mt-1 text-sm text-text-muted">
+                    {result.percentage >= 90
+                      ? 'Outstanding — fast and accurate.'
+                      : result.percentage >= 70
+                      ? 'Solid run — nice work.'
+                      : 'Give it another go.'}
+                  </p>
+
+                  {isNewRecord && !nameSaved && (
+                    <div className="mt-5 rounded-xl border border-accent/40 bg-accent/5 p-4">
+                      <p className="text-sm font-medium text-accent">
+                        New high score for {questionCount} questions! Enter your name:
+                      </p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <input
+                          type="text"
+                          value={nameInput}
+                          onChange={(e) => setNameInput(e.target.value)}
+                          placeholder="Your name"
+                          maxLength={24}
+                          className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/50"
+                        />
+                        <button
+                          onClick={saveRecord}
+                          disabled={!nameInput.trim()}
+                          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-base-deep disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={restart}
+                    className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-2.5 font-medium text-text-primary transition-colors hover:bg-white/10"
+                  >
+                    <RefreshCw size={16} />
+                    Try again
+                  </button>
+                </div>
+
+                <Leaderboard
+                  questionCount={questionCount}
+                  record={displayedRecord}
+                  isNewRecord={isNewRecord}
+                />
               </motion.div>
             )}
           </AnimatePresence>
