@@ -13,7 +13,10 @@ export const projects = [
       'Content-based recommendation engine for related results',
     ],
     tech: ['Python', 'C++', 'NumPy', 'Flask'],
-    links: { github: 'https://github.com/your-username/ir-engine', demo: null },
+    links: { 
+      github: 'https://github.com/NonTecyUser/ir-engine', 
+      demo: null 
+    },
   },
   {
     slug: 'hospital-management-system',
@@ -28,7 +31,10 @@ export const projects = [
       'Relational schema designed for data integrity and auditability',
     ],
     tech: ['Java', 'C#', '.NET', 'SQL'],
-    links: { github: 'https://github.com/your-username/hospital-management', demo: null },
+    links: { 
+      github: 'https://github.com/NonTecyUser/hospital-management', 
+      demo: null 
+    },
   },
   {
     slug: 'interactive-content-platform',
@@ -43,6 +49,9 @@ export const projects = [
       'Authentication and content management for publishing flow',
     ],
     tech: ['React', 'Next.js', 'Node.js', 'MongoDB'],
-    links: { github: 'https://github.com/NonTecyUser/content-platform', demo: 'https://your-demo-url.com' },
+    links: { 
+      github: 'https://github.com/NonTecyUser/content-platform', 
+      demo: 'https://your-demo-url.com' 
+    },
   },
 ];
