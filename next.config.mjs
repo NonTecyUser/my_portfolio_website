@@ -1,15 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'export',
-  basePath: '/my_portfolio_website',
   images: {
     unoptimized: true,
   },
-  basePath: '/samir-portfolio'
   trailingSlash: true,
-  
-  // Ensure asset paths work correctly with basePath
-  assetPrefix: '/my_portfolio_website/',
+
+  // If you were deploying under a subpath (like GitHub Pages),
+  // you’d use basePath and assetPrefix. For Netlify custom domain,
+  // leave them out so assets resolve correctly.
 };
 
 export default nextConfig;
